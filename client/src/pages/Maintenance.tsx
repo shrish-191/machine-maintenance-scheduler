@@ -2,13 +2,12 @@ import { useState } from "react";
 import { useMaintenanceRecords, useCreateMaintenance, useCompleteMaintenance } from "@/hooks/use-maintenance";
 import { useMachines } from "@/hooks/use-machines";
 import { PageHeader } from "@/components/PageHeader";
-import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { Calendar as CalendarIcon, CheckCircle, Clock, AlertTriangle, Plus } from "lucide-react";
-import { format, isPast, isToday, addDays } from "date-fns";
+import { format, isPast, isToday } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -21,12 +20,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 
-// Schemas
+/* ===========================
+   SCHEMAS
+=========================== */
+
 const scheduleSchema = z.object({
-  machineId: z.coerce.number().min(1, "Select a machine"),
-  scheduledDate: z.date({ required_error: "Date is required" }),
-  technicianName: z.string().optional(),
-  remarks: z.string().optional(),
+  machineId: z.coerce.number().min(1),
+  scheduledDate: z.date(),
 });
 
 const completeSchema = z.object({
@@ -34,123 +34,172 @@ const completeSchema = z.object({
   remarks: z.string().optional(),
 });
 
+/* ===========================
+   MAIN COMPONENT
+=========================== */
+
 export default function Maintenance() {
   const { data: records, isLoading } = useMaintenanceRecords();
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [completeId, setCompleteId] = useState<number | null>(null);
 
-  const upcoming = records?.filter(r => r.status === "Pending" && !isPast(new Date(r.scheduledDate)));
-  const overdue = records?.filter(r => r.status === "Pending" && isPast(new Date(r.scheduledDate)) && !isToday(new Date(r.scheduledDate)));
-  const completed = records?.filter(r => r.status === "Completed");
+  const upcoming =
+    records?.filter(
+      (r) => r.status === "Pending" && !isPast(new Date(r.scheduledDate))
+    ) ?? [];
+
+  const overdue =
+    records?.filter(
+      (r) =>
+        r.status === "Pending" &&
+        isPast(new Date(r.scheduledDate)) &&
+        !isToday(new Date(r.scheduledDate))
+    ) ?? [];
+
+  const completed = records?.filter((r) => r.status === "Completed") ?? [];
 
   return (
     <div className="space-y-6">
-      <PageHeader 
-        title="Maintenance Schedule" 
+      <PageHeader
+        title="Maintenance Schedule"
         description="Track upcoming tasks and log completed maintenance."
         action={
-          <Button onClick={() => setScheduleOpen(true)} className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/20">
-            <Plus className="mr-2 h-4 w-4" /> Schedule Task
+          <Button onClick={() => setScheduleOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Schedule Task
           </Button>
         }
       />
 
-      <Tabs defaultValue="upcoming" className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-3 mb-8">
+      <Tabs defaultValue="upcoming">
+        <TabsList className="grid w-full max-w-md grid-cols-3 mb-6">
           <TabsTrigger value="upcoming">Upcoming</TabsTrigger>
-          <TabsTrigger value="overdue" className="text-red-600 data-[state=active]:text-red-700 data-[state=active]:bg-red-50">Overdue</TabsTrigger>
+          <TabsTrigger value="overdue">Overdue</TabsTrigger>
           <TabsTrigger value="completed">History</TabsTrigger>
         </TabsList>
 
         <TabsContent value="upcoming" className="space-y-4">
-          {upcoming?.length === 0 ? (
-            <EmptyState message="No upcoming tasks scheduled." />
+          {upcoming.length === 0 ? (
+            <Empty message="No upcoming tasks scheduled." />
           ) : (
-            upcoming?.map(record => (
-              <MaintenanceCard 
-                key={record.id} 
-                record={record} 
-                onComplete={() => setCompleteId(record.id)} 
+            upcoming.map((r) => (
+              <MaintenanceCard
+                key={r.id}
+                record={r}
+                onComplete={() => setCompleteId(r.id)}
               />
             ))
           )}
         </TabsContent>
 
         <TabsContent value="overdue" className="space-y-4">
-          {overdue?.length === 0 ? (
-            <EmptyState message="No overdue tasks! Good job." />
+          {overdue.length === 0 ? (
+            <Empty message="No overdue tasks." />
           ) : (
-            overdue?.map(record => (
-              <MaintenanceCard 
-                key={record.id} 
-                record={record} 
-                isOverdue 
-                onComplete={() => setCompleteId(record.id)} 
+            overdue.map((r) => (
+              <MaintenanceCard
+                key={r.id}
+                record={r}
+                isOverdue
+                onComplete={() => setCompleteId(r.id)}
               />
             ))
           )}
         </TabsContent>
 
         <TabsContent value="completed" className="space-y-4">
-          {completed?.length === 0 ? (
-            <EmptyState message="No maintenance history found." />
+          {completed.length === 0 ? (
+            <Empty message="No maintenance history found." />
           ) : (
-            completed?.map(record => (
-              <MaintenanceCard key={record.id} record={record} isCompleted />
+            completed.map((r) => (
+              <MaintenanceCard key={r.id} record={r} isCompleted />
             ))
           )}
         </TabsContent>
       </Tabs>
 
       <ScheduleDialog open={scheduleOpen} onOpenChange={setScheduleOpen} />
-      <CompleteDialog open={!!completeId} onOpenChange={(v) => !v && setCompleteId(null)} recordId={completeId} />
+      <CompleteDialog
+        open={!!completeId}
+        onOpenChange={(v) => !v && setCompleteId(null)}
+        recordId={completeId}
+      />
     </div>
   );
 }
 
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-12 text-muted-foreground bg-slate-50/50 rounded-lg border border-dashed">
-      <CheckCircle className="h-10 w-10 mb-3 opacity-20" />
-      <p>{message}</p>
-    </div>
-  );
-}
+/* ===========================
+   CARD
+=========================== */
 
 function MaintenanceCard({ record, isOverdue, isCompleted, onComplete }: any) {
   return (
-    <Card className={cn("transition-all hover:shadow-md border-l-4", 
-      isOverdue ? "border-l-red-500 bg-red-50/10" : 
-      isCompleted ? "border-l-emerald-500 opacity-80" : "border-l-blue-500"
-    )}>
+    <Card
+      className={cn(
+        "transition-all hover:shadow-md border-l-4",
+        isOverdue
+          ? "border-l-red-500 bg-red-50/10"
+          : isCompleted
+          ? "border-l-emerald-500 opacity-80"
+          : "border-l-blue-500"
+      )}
+    >
       <CardContent className="p-4 flex items-center justify-between">
         <div className="flex items-start gap-4">
-          <div className={cn("p-2 rounded-full mt-1", 
-            isOverdue ? "bg-red-100 text-red-600" : 
-            isCompleted ? "bg-emerald-100 text-emerald-600" : "bg-blue-100 text-blue-600"
-          )}>
-            {isOverdue ? <AlertTriangle className="h-5 w-5" /> : 
-             isCompleted ? <CheckCircle className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
+          <div
+            className={cn(
+              "p-2 rounded-full mt-1",
+              isOverdue
+                ? "bg-red-100 text-red-600"
+                : isCompleted
+                ? "bg-emerald-100 text-emerald-600"
+                : "bg-blue-100 text-blue-600"
+            )}
+          >
+            {isOverdue ? (
+              <AlertTriangle className="h-5 w-5" />
+            ) : isCompleted ? (
+              <CheckCircle className="h-5 w-5" />
+            ) : (
+              <Clock className="h-5 w-5" />
+            )}
           </div>
+
           <div>
-            <h3 className="font-bold text-foreground">{record.machineName}</h3>
-            <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
+            {/* MACHINE NAME */}
+            <h3 className="font-bold text-foreground text-lg">
+              {record.machineName}
+            </h3>
+
+            {/* DATE */}
+            <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
               <span className="flex items-center gap-1">
                 <CalendarIcon className="h-3 w-3" />
                 {format(new Date(record.scheduledDate), "MMMM dd, yyyy")}
               </span>
+
               {record.technicianName && (
-                <span className="font-medium text-foreground/80">Tech: {record.technicianName}</span>
+                <span className="font-medium text-foreground/80">
+                  Technician: {record.technicianName}
+                </span>
               )}
             </div>
+
+            {/* REMARKS */}
             {record.remarks && (
-              <p className="text-sm text-muted-foreground mt-2 italic">"{record.remarks}"</p>
+              <p className="text-sm text-muted-foreground mt-2 italic">
+                “{record.remarks}”
+              </p>
             )}
           </div>
         </div>
-        
+
         {!isCompleted && onComplete && (
-          <Button onClick={onComplete} variant={isOverdue ? "destructive" : "secondary"} size="sm">
+          <Button
+            onClick={onComplete}
+            variant={isOverdue ? "destructive" : "secondary"}
+            size="sm"
+          >
             Complete Task
           </Button>
         )}
@@ -159,33 +208,52 @@ function MaintenanceCard({ record, isOverdue, isCompleted, onComplete }: any) {
   );
 }
 
-function ScheduleDialog({ open, onOpenChange }: { open: boolean, onOpenChange: (v: boolean) => void }) {
+
+/* ===========================
+   EMPTY STATE
+=========================== */
+
+function Empty({ message }: { message: string }) {
+  return (
+    <div className="text-center py-10 text-muted-foreground">
+      {message}
+    </div>
+  );
+}
+
+/* ===========================
+   SCHEDULE DIALOG
+=========================== */
+
+function ScheduleDialog({ open, onOpenChange }: any) {
   const { data: machines } = useMachines();
   const createMutation = useCreateMaintenance();
   const { toast } = useToast();
-  
-  const form = useForm<z.infer<typeof scheduleSchema>>({
+
+  const form = useForm({
     resolver: zodResolver(scheduleSchema),
   });
 
-  const onSubmit = (data: z.infer<typeof scheduleSchema>) => {
-    createMutation.mutate({
-      ...data,
-      status: "Pending"
-    }, {
-      onSuccess: () => {
-        toast({ title: "Maintenance scheduled" });
-        onOpenChange(false);
-        form.reset();
-      },
-      onError: () => toast({ title: "Failed to schedule", variant: "destructive" })
-    });
+  const onSubmit = (data: any) => {
+    createMutation.mutate(
+      { ...data, status: "Pending" },
+      {
+        onSuccess: () => {
+          toast({ title: "Maintenance scheduled" });
+          onOpenChange(false);
+          form.reset();
+        },
+      }
+    );
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Schedule Maintenance</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Schedule Maintenance</DialogTitle>
+        </DialogHeader>
+
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
@@ -194,13 +262,17 @@ function ScheduleDialog({ open, onOpenChange }: { open: boolean, onOpenChange: (
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Machine</FormLabel>
-                  <Select onValueChange={(val) => field.onChange(parseInt(val))}>
+                  <Select onValueChange={(val) => field.onChange(Number(val))}>
                     <FormControl>
-                      <SelectTrigger><SelectValue placeholder="Select machine" /></SelectTrigger>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select machine" />
+                      </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {machines?.map(m => (
-                        <SelectItem key={m.id} value={m.id.toString()}>{m.name}</SelectItem>
+                      {machines?.map((m) => (
+                        <SelectItem key={m.id} value={m.id.toString()}>
+                          {m.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -208,33 +280,24 @@ function ScheduleDialog({ open, onOpenChange }: { open: boolean, onOpenChange: (
                 </FormItem>
               )}
             />
+
             <FormField
               control={form.control}
               name="scheduledDate"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Date</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button variant="outline" className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}>
-                          {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar mode="single" selected={field.value} onSelect={field.onChange} disabled={(date) => date < new Date()} initialFocus />
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
+                  <Calendar
+                    mode="single"
+                    selected={field.value}
+                    onSelect={field.onChange}
+                  />
                 </FormItem>
               )}
             />
-            <DialogFooter className="pt-4">
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? "Scheduling..." : "Schedule Task"}
-              </Button>
+
+            <DialogFooter>
+              <Button type="submit">Schedule</Button>
             </DialogFooter>
           </form>
         </Form>
@@ -243,30 +306,40 @@ function ScheduleDialog({ open, onOpenChange }: { open: boolean, onOpenChange: (
   );
 }
 
-function CompleteDialog({ open, onOpenChange, recordId }: { open: boolean, onOpenChange: (v: boolean) => void, recordId: number | null }) {
+/* ===========================
+   COMPLETE DIALOG
+=========================== */
+
+function CompleteDialog({ open, onOpenChange, recordId }: any) {
   const completeMutation = useCompleteMaintenance();
   const { toast } = useToast();
-  
-  const form = useForm<z.infer<typeof completeSchema>>({
+
+  const form = useForm({
     resolver: zodResolver(completeSchema),
   });
 
-  const onSubmit = (data: z.infer<typeof completeSchema>) => {
+  const onSubmit = (data: any) => {
     if (!recordId) return;
-    completeMutation.mutate({ id: recordId, ...data }, {
-      onSuccess: () => {
-        toast({ title: "Task completed" });
-        onOpenChange(false);
-        form.reset();
-      },
-      onError: () => toast({ title: "Failed to complete", variant: "destructive" })
-    });
+
+    completeMutation.mutate(
+      { id: recordId, ...data },
+      {
+        onSuccess: () => {
+          toast({ title: "Task completed" });
+          onOpenChange(false);
+          form.reset();
+        },
+      }
+    );
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader><DialogTitle>Complete Maintenance Task</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle>Complete Maintenance Task</DialogTitle>
+        </DialogHeader>
+
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
@@ -275,25 +348,31 @@ function CompleteDialog({ open, onOpenChange, recordId }: { open: boolean, onOpe
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Technician Name</FormLabel>
-                  <FormControl><Input placeholder="John Doe" {...field} /></FormControl>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
+
             <FormField
               control={form.control}
               name="remarks"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Remarks / Notes</FormLabel>
-                  <FormControl><Textarea placeholder="Maintenance details..." {...field} /></FormControl>
+                  <FormLabel>Remarks</FormLabel>
+                  <FormControl>
+                    <Textarea {...field} />
+                  </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <DialogFooter className="pt-4">
-              <Button type="submit" disabled={completeMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700">
-                {completeMutation.isPending ? "Completing..." : "Mark as Complete"}
+
+            <DialogFooter>
+              <Button type="submit">
+                Mark as Complete
               </Button>
             </DialogFooter>
           </form>

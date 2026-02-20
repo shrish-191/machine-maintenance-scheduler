@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, date } from "drizzle-orm/pg-core";
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -6,23 +6,23 @@ import { z } from "zod";
 // === TABLE DEFINITIONS ===
 
 // Machine Entity
-export const machines = pgTable("machines", {
-  id: serial("id").primaryKey(),
+export const machines = sqliteTable("machines", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   location: text("location").notNull(),
   status: text("status").notNull().default("Running"), // Running, Stopped, Maintenance
   maintenanceFrequencyDays: integer("maintenance_frequency_days").notNull(),
-  lastMaintenanceDate: date("last_maintenance_date"),
-  nextDueDate: date("next_due_date"), // Auto-calculated
-  imageUrl: text("image_url"), // Optional machine image
+  lastMaintenanceDate: text("last_maintenance_date"),
+  nextDueDate: text("next_due_date"), // Auto-calculated
+  imageUrl: text("image_url"),
 });
 
 // Maintenance Record Entity
-export const maintenanceRecords = pgTable("maintenance_records", {
-  id: serial("id").primaryKey(),
+export const maintenanceRecords = sqliteTable("maintenance_records", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
   machineId: integer("machine_id").notNull(),
-  scheduledDate: date("scheduled_date").notNull(),
-  completedDate: date("completed_date"),
+  scheduledDate: text("scheduled_date").notNull(),
+  completedDate: text("completed_date"),
   status: text("status").notNull().default("Pending"), // Pending, Completed, Overdue
   technicianName: text("technician_name"),
   remarks: text("remarks"),
@@ -59,6 +59,7 @@ export type UpdateMachineRequest = Partial<InsertMachine>;
 
 export type CreateMaintenanceRequest = InsertMaintenanceRecord;
 export type UpdateMaintenanceRequest = Partial<InsertMaintenanceRecord>;
+
 export type CompleteMaintenanceRequest = {
   completionDate: string;
   technicianName: string;
@@ -67,13 +68,15 @@ export type CompleteMaintenanceRequest = {
 
 // Response types
 export type MachineResponse = Machine & {
-  healthScore?: number; // Calculated field
+  healthScore?: number;
 };
+
 export type MachineListResponse = MachineResponse[];
 
 export type MaintenanceRecordResponse = MaintenanceRecord & {
-  machineName?: string; // Joined field for display
+  machineName?: string;
 };
+
 export type MaintenanceListResponse = MaintenanceRecordResponse[];
 
 // Stats types

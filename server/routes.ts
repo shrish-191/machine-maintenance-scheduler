@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
+import { type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
@@ -10,9 +10,11 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
-  // === Machines ===
+  /* =========================
+     MACHINES
+  ========================= */
 
-  app.get(api.machines.list.path, async (req, res) => {
+  app.get(api.machines.list.path, async (_req, res) => {
     const machines = await storage.getMachines();
     res.json(machines);
   });
@@ -22,11 +24,15 @@ export async function registerRoutes(
     if (!machine) {
       return res.status(404).json({ message: "Machine not found" });
     }
-    // Calculate Health Score dynamically
+
     const history = await storage.getMachineMaintenanceHistory(machine.id);
     const totalTasks = history.length;
     const completedTasks = history.filter(t => t.status === "Completed").length;
-    const healthScore = totalTasks === 0 ? 100 : Math.round((completedTasks / totalTasks) * 100);
+
+    const healthScore =
+      totalTasks === 0
+        ? 100
+        : Math.round((completedTasks / totalTasks) * 100);
 
     res.json({ ...machine, healthScore });
   });
@@ -34,8 +40,7 @@ export async function registerRoutes(
   app.post(api.machines.create.path, async (req, res) => {
     try {
       const input = api.machines.create.input.parse(req.body);
-      
-      // Auto-calculate next due date if not provided
+
       if (!input.nextDueDate) {
         const today = new Date();
         const nextDue = addDays(today, input.maintenanceFrequencyDays);
@@ -57,9 +62,11 @@ export async function registerRoutes(
       const id = Number(req.params.id);
       const input = api.machines.update.input.parse(req.body);
       const updated = await storage.updateMachine(id, input);
+
       if (!updated) {
         return res.status(404).json({ message: "Machine not found" });
       }
+
       res.json(updated);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -75,16 +82,22 @@ export async function registerRoutes(
     res.status(204).send();
   });
 
-  // === Maintenance ===
+  /* =========================
+     MAINTENANCE
+  ========================= */
 
   app.get(api.maintenance.list.path, async (req, res) => {
-    const machineId = req.query.machineId ? Number(req.query.machineId) : undefined;
+    const machineId = req.query.machineId
+      ? Number(req.query.machineId)
+      : undefined;
+
     const status = req.query.status as string;
     const range = req.query.range as string;
 
     let records;
+
     if (range === "upcoming") {
-      records = await storage.getUpcomingMaintenance(7); // Next 7 days
+      records = await storage.getUpcomingMaintenance(7);
     } else if (range === "overdue") {
       records = await storage.getOverdueMaintenance();
     } else {
@@ -94,14 +107,22 @@ export async function registerRoutes(
       }
     }
 
-    res.json(records);
+    /* 🔥 FIX: Attach machineName */
+    const machines = await storage.getMachines();
+    const machineMap = new Map(machines.map(m => [m.id, m.name]));
+
+    const enrichedRecords = records.map(r => ({
+      ...r,
+      machineName: machineMap.get(r.machineId) ?? "Unknown Machine",
+    }));
+
+    res.json(enrichedRecords);
   });
 
   app.post(api.maintenance.create.path, async (req, res) => {
     try {
       const input = api.maintenance.create.input.parse(req.body);
-      
-      // Verify machine exists
+
       const machine = await storage.getMachine(input.machineId);
       if (!machine) {
         return res.status(404).json({ message: "Machine not found" });
@@ -123,44 +144,49 @@ export async function registerRoutes(
       const { technicianName, remarks } = req.body;
       const today = format(new Date(), "yyyy-MM-dd");
 
-      // 1. Update Maintenance Record
       const updatedRecord = await storage.updateMaintenanceRecord(id, {
         status: "Completed",
         completedDate: today,
         technicianName,
-        remarks
+        remarks,
       });
 
       if (!updatedRecord) {
         return res.status(404).json({ message: "Maintenance task not found" });
       }
 
-      // 2. Update Machine: last_maintenance_date and next_due_date
       const machine = await storage.getMachine(updatedRecord.machineId);
       if (machine) {
-        const nextDue = addDays(parseISO(today), machine.maintenanceFrequencyDays);
+        const nextDue = addDays(
+          parseISO(today),
+          machine.maintenanceFrequencyDays
+        );
+
         await storage.updateMachine(machine.id, {
           lastMaintenanceDate: today,
           nextDueDate: format(nextDue, "yyyy-MM-dd"),
-          status: "Running" // Assume machine is back to running after maintenance
+          status: "Running",
         });
       }
 
       res.json(updatedRecord);
-    } catch (err) {
+    } catch {
       res.status(400).json({ message: "Invalid request" });
     }
   });
 
-  // === Dashboard Stats ===
-  
-  app.get(api.stats.dashboard.path, async (req, res) => {
+  /* =========================
+     DASHBOARD
+  ========================= */
+
+  app.get(api.stats.dashboard.path, async (_req, res) => {
     const machines = await storage.getMachines();
     const upcoming = await storage.getUpcomingMaintenance(7);
     const overdue = await storage.getOverdueMaintenance();
-    
-    // Count machines currently in "Maintenance" status (from machine table, not tasks)
-    const inMaintenance = machines.filter(m => m.status === "Maintenance").length;
+
+    const inMaintenance = machines.filter(
+      m => m.status === "Maintenance"
+    ).length;
 
     res.json({
       totalMachines: machines.length,
@@ -170,7 +196,10 @@ export async function registerRoutes(
     });
   });
 
-  // Seed Data
+  /* =========================
+     SEED
+  ========================= */
+
   if ((await storage.getMachines()).length === 0) {
     console.log("Seeding database...");
     await seedDatabase();
@@ -178,6 +207,10 @@ export async function registerRoutes(
 
   return httpServer;
 }
+
+/* =========================
+   SEED FUNCTION
+========================= */
 
 async function seedDatabase() {
   const machines = [
@@ -189,17 +222,20 @@ async function seedDatabase() {
   ];
 
   const createdMachines = [];
+
   for (const m of machines) {
     const today = new Date();
-    const nextDue = addDays(today, Math.floor(Math.random() * 20) - 5); // Some overdue, some upcoming
-    createdMachines.push(await storage.createMachine({
-      ...m,
-      lastMaintenanceDate: format(addDays(today, -30), "yyyy-MM-dd"),
-      nextDueDate: format(nextDue, "yyyy-MM-dd"),
-    }));
+    const nextDue = addDays(today, Math.floor(Math.random() * 20) - 5);
+
+    createdMachines.push(
+      await storage.createMachine({
+        ...m,
+        lastMaintenanceDate: format(addDays(today, -30), "yyyy-MM-dd"),
+        nextDueDate: format(nextDue, "yyyy-MM-dd"),
+      })
+    );
   }
 
-  // Create some maintenance tasks
   const today = format(new Date(), "yyyy-MM-dd");
   const yesterday = format(addDays(new Date(), -1), "yyyy-MM-dd");
   const tomorrow = format(addDays(new Date(), 1), "yyyy-MM-dd");
@@ -208,13 +244,13 @@ async function seedDatabase() {
   await storage.createMaintenanceRecord({
     machineId: createdMachines[0].id,
     scheduledDate: overdueDate,
-    status: "Pending" // Overdue
+    status: "Pending",
   });
 
   await storage.createMaintenanceRecord({
     machineId: createdMachines[1].id,
     scheduledDate: tomorrow,
-    status: "Pending" // Upcoming
+    status: "Pending",
   });
 
   await storage.createMaintenanceRecord({
@@ -223,6 +259,6 @@ async function seedDatabase() {
     status: "Completed",
     completedDate: yesterday,
     technicianName: "John Doe",
-    remarks: "Replaced filter"
+    remarks: "Replaced filter",
   });
 }

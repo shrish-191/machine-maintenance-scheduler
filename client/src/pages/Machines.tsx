@@ -267,12 +267,157 @@ function CreateMachineDialog({ open, onOpenChange }: { open: boolean, onOpenChan
   );
 }
 
-function EditMachineDialog({ open, onOpenChange, machineId }: { open: boolean, onOpenChange: (open: boolean) => void, machineId: number }) {
-  // This would ideally load machine data and pre-fill form
-  // For brevity, similar structure to Create but with update mutation
+function EditMachineDialog({
+  open,
+  onOpenChange,
+  machineId,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  machineId: number;
+}) {
+  const { data: machines } = useMachines();
   const updateMutation = useUpdateMachine();
   const { toast } = useToast();
-  // ... implementation omitted but would be full featured
-  // Just closing for now
-  return null; 
+
+  const machine = machines?.find((m) => m.id === machineId);
+
+  const form = useForm<MachineFormValues>({
+    resolver: zodResolver(formSchema),
+    values: machine
+      ? {
+          name: machine.name,
+          location: machine.location,
+          maintenanceFrequencyDays: machine.maintenanceFrequencyDays,
+          status: machine.status,
+          imageUrl: machine.imageUrl || "",
+        }
+      : undefined,
+  });
+
+  if (!machine) return null;
+
+  const onSubmit = (data: MachineFormValues) => {
+    updateMutation.mutate(
+      { id: machineId, ...data },
+      {
+        onSuccess: () => {
+          toast({ title: "Machine updated successfully" });
+          onOpenChange(false);
+        },
+        onError: (err) => {
+          toast({
+            title: "Update failed",
+            description: err.message,
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Edit Machine</DialogTitle>
+        </DialogHeader>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="name"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Machine Name</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="location"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Location</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="maintenanceFrequencyDays"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Maintenance Frequency (Days)</FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      {...field}
+                      onChange={(e) =>
+                        field.onChange(parseInt(e.target.value))
+                      }
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="status"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Status</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="Running">Running</SelectItem>
+                      <SelectItem value="Stopped">Stopped</SelectItem>
+                      <SelectItem value="Maintenance">
+                        Maintenance
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <DialogFooter className="pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={updateMutation.isPending}
+                className="bg-primary"
+              >
+                {updateMutation.isPending ? "Updating..." : "Save Changes"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
 }
+
